@@ -386,7 +386,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupFpsSpinner() {
         val labels = FPS_OPTIONS.map { "${it}fps" }
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels)
+        val adapter = ArrayAdapter(this, R.layout.spinner_item, labels)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         fpsSpinner.adapter = adapter
         fpsSpinner.setSelection(FPS_OPTIONS.indexOf(30).coerceAtLeast(0))
@@ -417,7 +417,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val labels = availableResolutions.map { "${it.width}x${it.height}" }
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels)
+        val adapter = ArrayAdapter(this, R.layout.spinner_item, labels)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         resolutionSpinner.adapter = adapter
 
