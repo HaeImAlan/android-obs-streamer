@@ -3,6 +3,7 @@ package com.example.usbcam
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.util.Size
 import android.view.TextureView
@@ -11,6 +12,8 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.net.Inet4Address
+import java.net.NetworkInterface
 
 class MainActivity : AppCompatActivity() {
 
@@ -160,7 +163,12 @@ class MainActivity : AppCompatActivity() {
         server.start()
         cameraStreamer.start(if (surfaceReady) textureView.surfaceTexture else null)
         streaming = true
-        statusText.text = "Streaming on port 4747"
+        val ip = getDeviceIp()
+        statusText.text = if (ip != null) {
+            "Streaming at http://$ip:4747/video"
+        } else {
+            "Streaming on port 4747 (connect to WiFi to see IP)"
+        }
         toggleButton.text = "Stop"
     }
 
@@ -190,5 +198,20 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         cameraStreamer.stop()
         server.stop()
+    }
+
+    private fun getDeviceIp(): String? {
+        try {
+            for (intf in NetworkInterface.getNetworkInterfaces()) {
+                for (addr in intf.inetAddresses) {
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        return addr.hostAddress
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return null
     }
 }
