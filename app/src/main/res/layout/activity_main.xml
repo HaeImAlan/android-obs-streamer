@@ -28,6 +28,17 @@
             android:textSize="16sp"
             android:gravity="center" />
 
+        <TextView
+            android:id="@+id/connectionInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#FFAAAAAA"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginTop="4dp"
+            android:visibility="gone" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

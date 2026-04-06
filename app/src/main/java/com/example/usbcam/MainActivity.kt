@@ -23,6 +23,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var textureView: TextureView
     private lateinit var statusText: TextView
+    private lateinit var connectionInfo: TextView
     private lateinit var toggleButton: Button
     private lateinit var resolutionSpinner: Spinner
 
@@ -39,6 +40,7 @@ class MainActivity : AppCompatActivity() {
 
         textureView = findViewById(R.id.textureView)
         statusText = findViewById(R.id.statusText)
+        connectionInfo = findViewById(R.id.connectionInfo)
         toggleButton = findViewById(R.id.toggleButton)
         resolutionSpinner = findViewById(R.id.resolutionSpinner)
 
@@ -163,12 +165,7 @@ class MainActivity : AppCompatActivity() {
         server.start()
         cameraStreamer.start(if (surfaceReady) textureView.surfaceTexture else null)
         streaming = true
-        val ip = getDeviceIp()
-        statusText.text = if (ip != null) {
-            "Streaming at http://$ip:4747/video"
-        } else {
-            "Streaming on port 4747 (connect to WiFi to see IP)"
-        }
+        updateConnectionInfo()
         toggleButton.text = "Stop"
     }
 
@@ -177,6 +174,7 @@ class MainActivity : AppCompatActivity() {
         server.stop()
         streaming = false
         statusText.text = "Stopped"
+        connectionInfo.visibility = View.GONE
         toggleButton.text = "Start"
     }
 
@@ -198,6 +196,16 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         cameraStreamer.stop()
         server.stop()
+    }
+
+    private fun updateConnectionInfo() {
+        val ip = getDeviceIp()
+        val wifiUrl = if (ip != null) "WiFi: http://$ip:4747/video" else "WiFi: not connected"
+        val adbInfo = "USB/ADB: adb forward tcp:4747 tcp:4747 → http://localhost:4747/video"
+
+        statusText.text = "Streaming on port 4747"
+        connectionInfo.text = "$wifiUrl\n$adbInfo"
+        connectionInfo.visibility = View.VISIBLE
     }
 
     private fun getDeviceIp(): String? {
