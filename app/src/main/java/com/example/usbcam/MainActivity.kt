@@ -19,7 +19,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val CAMERA_PERMISSION_CODE = 100
-        private val FPS_OPTIONS = intArrayOf(10, 15, 20, 24, 30)
+        private val FPS_OPTIONS = intArrayOf(10, 15, 20, 24, 30, 60)
     }
 
     private lateinit var textureView: TextureView
