@@ -9,6 +9,13 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Ring light overlay (full-screen white border, hidden by default) -->
+    <View
+        android:id="@+id/ringLightOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <!-- Focus ring indicator -->
     <View
         android:id="@+id/focusRing"
@@ -51,13 +58,72 @@
             android:layout_marginTop="2dp"
             android:visibility="gone" />
 
-        <!-- Row 1: Res | FPS -->
+        <!-- Row 1: Camera switch | Torch | Ring Light -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
             android:layout_marginTop="10dp">
+
+            <TextView
+                android:id="@+id/cameraSwitchButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Back Cam"
+                android:textColor="#FF00CC66"
+                android:textSize="12sp"
+                android:background="?android:attr/selectableItemBackground" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
+                android:background="#FF444444" />
+
+            <TextView
+                android:id="@+id/torchButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Torch: Off"
+                android:textColor="#FF888888"
+                android:textSize="12sp"
+                android:background="?android:attr/selectableItemBackground" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
+                android:background="#FF444444" />
+
+            <TextView
+                android:id="@+id/ringLightButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Ring Light"
+                android:textColor="#FF888888"
+                android:textSize="12sp"
+                android:background="?android:attr/selectableItemBackground" />
+        </LinearLayout>
+
+        <!-- Row 2: Res | FPS -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="6dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -93,7 +159,7 @@
                 android:layout_marginStart="4dp" />
         </LinearLayout>
 
-        <!-- Row 2: AF mode | AE lock -->
+        <!-- Row 3: AF mode | AE lock -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -141,7 +207,7 @@
                 android:textSize="10sp" />
         </LinearLayout>
 
-        <!-- Row 3: Exposure compensation slider -->
+        <!-- Row 4: Exposure compensation slider -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -174,7 +240,35 @@
                 android:gravity="center" />
         </LinearLayout>
 
-        <!-- Row 4: Buttons -->
+        <!-- Row 5: Ring light brightness (shown when ring light on) -->
+        <LinearLayout
+            android:id="@+id/ringLightBrightnessRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="6dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Light"
+                android:textColor="#FF888888"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/ringLightSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:max="255"
+                android:progress="200" />
+        </LinearLayout>
+
+        <!-- Row 6: Buttons -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

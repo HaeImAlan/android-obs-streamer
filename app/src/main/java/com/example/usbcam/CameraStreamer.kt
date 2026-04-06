@@ -33,14 +33,18 @@ class CameraStreamer(
     var continuousAf: Boolean = true
     var aeLocked: Boolean = false
     var exposureCompensation: Int = 0
+    var useFrontCamera: Boolean = false
+    var torchEnabled: Boolean = false
 
-    /** Range of supported EV compensation values */
     var evRange: Range<Int> = Range(0, 0)
+        private set
+
+    var hasFlash: Boolean = false
         private set
 
     fun getSupportedResolutions(): List<Size> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val cameraId = findRearCamera(manager) ?: return emptyList()
+        val cameraId = findCamera(manager) ?: return emptyList()
         val characteristics = manager.getCameraCharacteristics(cameraId)
         val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             ?: return emptyList()
@@ -70,13 +74,13 @@ class CameraStreamer(
         }, cameraHandler)
 
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val cameraId = findRearCamera(manager) ?: return
+        val cameraId = findCamera(manager) ?: return
 
-        // Read camera characteristics for focus/exposure support
         val characteristics = manager.getCameraCharacteristics(cameraId)
         sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
         evRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
             ?: Range(0, 0)
+        hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) ?: false
 
         try {
             manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
@@ -135,7 +139,6 @@ class CameraStreamer(
         }
     }
 
-    /** Apply current AF/AE/EV/FPS settings to the repeating request */
     fun applySettings() {
         val builder = requestBuilder ?: return
         val session = captureSession ?: return
@@ -152,6 +155,15 @@ class CameraStreamer(
             Range(targetFps, targetFps)
         )
 
+        // Torch (only works on back camera with flash)
+        if (hasFlash && !useFrontCamera) {
+            builder.set(
+                CaptureRequest.FLASH_MODE,
+                if (torchEnabled) CaptureRequest.FLASH_MODE_TORCH
+                else CaptureRequest.FLASH_MODE_OFF
+            )
+        }
+
         try {
             session.setRepeatingRequest(builder.build(), null, cameraHandler)
         } catch (e: CameraAccessException) {
@@ -161,17 +173,11 @@ class CameraStreamer(
         }
     }
 
-    /**
-     * Tap-to-focus at a point in sensor coordinates.
-     * @param nx normalized X (0..1) within the preview
-     * @param ny normalized Y (0..1) within the preview
-     */
     fun tapToFocus(nx: Float, ny: Float) {
         val builder = requestBuilder ?: return
         val session = captureSession ?: return
         val sensorRect = sensorArraySize ?: return
 
-        // Map normalized coordinates to sensor area
         val focusSize = 200
         val cx = (nx * sensorRect.width()).toInt().coerceIn(focusSize / 2, sensorRect.width() - focusSize / 2)
         val cy = (ny * sensorRect.height()).toInt().coerceIn(focusSize / 2, sensorRect.height() - focusSize / 2)
@@ -183,18 +189,15 @@ class CameraStreamer(
         )
 
         try {
-            // Cancel any existing AF
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL)
             session.capture(builder.build(), null, cameraHandler)
 
-            // Set focus region and trigger AF
             builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
             builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(focusArea))
             builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(focusArea))
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
             session.capture(builder.build(), null, cameraHandler)
 
-            // Reset trigger for repeating request
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
             session.setRepeatingRequest(builder.build(), null, cameraHandler)
         } catch (e: CameraAccessException) {
@@ -230,11 +233,16 @@ class CameraStreamer(
         cameraHandler = null
     }
 
-    private fun findRearCamera(manager: CameraManager): String? {
+    private fun findCamera(manager: CameraManager): String? {
+        val targetFacing = if (useFrontCamera)
+            CameraCharacteristics.LENS_FACING_FRONT
+        else
+            CameraCharacteristics.LENS_FACING_BACK
+
         for (id in manager.cameraIdList) {
             val characteristics = manager.getCameraCharacteristics(id)
             val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
-            if (facing == CameraCharacteristics.LENS_FACING_BACK) {
+            if (facing == targetFacing) {
                 return id
             }
         }

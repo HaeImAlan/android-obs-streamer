@@ -2,7 +2,9 @@ package com.example.usbcam
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.SurfaceTexture
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -38,6 +40,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var evSeekBar: SeekBar
     private lateinit var evValueText: TextView
     private lateinit var focusRing: View
+    private lateinit var cameraSwitchButton: TextView
+    private lateinit var torchButton: TextView
+    private lateinit var ringLightButton: TextView
+    private lateinit var ringLightOverlay: View
+    private lateinit var ringLightBrightnessRow: View
+    private lateinit var ringLightSeekBar: SeekBar
 
     private val server = MjpegServer()
     private lateinit var cameraStreamer: CameraStreamer
@@ -46,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private var surfaceReady = false
     private var screenOff = false
     private var controlsVisible = true
+    private var ringLightOn = false
 
     private val availableResolutions = mutableListOf<Size>()
 
@@ -67,6 +76,12 @@ class MainActivity : AppCompatActivity() {
         evValueText = findViewById(R.id.evValueText)
         focusRing = findViewById(R.id.focusRing)
         focusRing.setBackgroundResource(R.drawable.focus_ring)
+        cameraSwitchButton = findViewById(R.id.cameraSwitchButton)
+        torchButton = findViewById(R.id.torchButton)
+        ringLightButton = findViewById(R.id.ringLightButton)
+        ringLightOverlay = findViewById(R.id.ringLightOverlay)
+        ringLightBrightnessRow = findViewById(R.id.ringLightBrightnessRow)
+        ringLightSeekBar = findViewById(R.id.ringLightSeekBar)
 
         cameraStreamer = CameraStreamer(this, server)
 
@@ -96,12 +111,105 @@ class MainActivity : AppCompatActivity() {
             if (screenOff) screenOn() else screenOff()
         }
 
+        cameraSwitchButton.setOnClickListener { switchCamera() }
+        torchButton.setOnClickListener { toggleTorch() }
+        ringLightButton.setOnClickListener { toggleRingLight() }
         afModeButton.setOnClickListener { toggleAfMode() }
         aeLockButton.setOnClickListener { toggleAeLock() }
 
         setupFpsSpinner()
         setupEvSlider()
+        setupRingLightSlider()
         requestCameraPermission()
+    }
+
+    // ── Camera switch ────────────────────────────────────────────────────
+
+    private fun switchCamera() {
+        cameraStreamer.useFrontCamera = !cameraStreamer.useFrontCamera
+        // Turn off torch when switching to front
+        if (cameraStreamer.useFrontCamera) {
+            cameraStreamer.torchEnabled = false
+        }
+        updateCameraLabels()
+        if (streaming) restartCamera()
+    }
+
+    private fun updateCameraLabels() {
+        val isFront = cameraStreamer.useFrontCamera
+        cameraSwitchButton.text = if (isFront) "Front Cam" else "Back Cam"
+        cameraSwitchButton.setTextColor(if (isFront) 0xFFFFAA00.toInt() else 0xFF00CC66.toInt())
+
+        // Torch only available on back camera with flash
+        val torchAvailable = !isFront && cameraStreamer.hasFlash
+        torchButton.isEnabled = torchAvailable
+        updateTorchLabel()
+    }
+
+    // ── Torch (back camera flash as continuous light) ────────────────────
+
+    private fun toggleTorch() {
+        if (cameraStreamer.useFrontCamera) return
+        cameraStreamer.torchEnabled = !cameraStreamer.torchEnabled
+        updateTorchLabel()
+        if (streaming) cameraStreamer.applySettings()
+    }
+
+    private fun updateTorchLabel() {
+        if (cameraStreamer.torchEnabled && !cameraStreamer.useFrontCamera) {
+            torchButton.text = "Torch: On"
+            torchButton.setTextColor(0xFFFFCC00.toInt())
+        } else {
+            torchButton.text = "Torch: Off"
+            torchButton.setTextColor(0xFF888888.toInt())
+        }
+    }
+
+    // ── Ring light (screen as light source for front camera) ─────────────
+
+    private fun toggleRingLight() {
+        ringLightOn = !ringLightOn
+        if (ringLightOn) {
+            updateRingLightBrightness(ringLightSeekBar.progress)
+            ringLightOverlay.visibility = View.VISIBLE
+            ringLightBrightnessRow.visibility = View.VISIBLE
+            ringLightButton.text = "Ring Light"
+            ringLightButton.setTextColor(0xFFFFCC00.toInt())
+            // Max screen brightness
+            val lp = window.attributes
+            lp.screenBrightness = 1.0f
+            window.attributes = lp
+        } else {
+            ringLightOverlay.visibility = View.GONE
+            ringLightBrightnessRow.visibility = View.GONE
+            ringLightButton.text = "Ring Light"
+            ringLightButton.setTextColor(0xFF888888.toInt())
+            // Restore brightness
+            if (!screenOff) {
+                val lp = window.attributes
+                lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                window.attributes = lp
+            }
+        }
+    }
+
+    private fun setupRingLightSlider() {
+        ringLightSeekBar.max = 255
+        ringLightSeekBar.progress = 200
+        ringLightSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (ringLightOn) updateRingLightBrightness(progress)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+        })
+    }
+
+    private fun updateRingLightBrightness(brightness: Int) {
+        val bg = GradientDrawable()
+        bg.shape = GradientDrawable.RECTANGLE
+        bg.setColor(Color.argb(brightness, 255, 255, 255))
+        ringLightOverlay.background = bg
     }
 
     // ── Tap-to-focus ─────────────────────────────────────────────────────
@@ -116,7 +224,6 @@ class MainActivity : AppCompatActivity() {
                         cameraStreamer.tapToFocus(nx, ny)
                         showFocusRing(event.x, event.y)
                     }
-                    // Also toggle controls on tap
                     toggleControls()
                     v.performClick()
                     true
@@ -138,7 +245,6 @@ class MainActivity : AppCompatActivity() {
             .scaleX(1f).scaleY(1f)
             .setDuration(200)
             .start()
-        // Fade out after 1.5s
         uiHandler.removeCallbacksAndMessages("focus")
         uiHandler.postDelayed({
             focusRing.animate().alpha(0f).setDuration(300).withEndAction {
@@ -184,7 +290,6 @@ class MainActivity : AppCompatActivity() {
     // ── Exposure compensation ────────────────────────────────────────────
 
     private fun setupEvSlider() {
-        // Will be reconfigured once camera starts and we know the EV range
         evSeekBar.max = 0
         evSeekBar.progress = 0
         evValueText.text = "0"
@@ -207,7 +312,7 @@ class MainActivity : AppCompatActivity() {
         val range = cameraStreamer.evRange
         val total = range.upper - range.lower
         evSeekBar.max = total
-        evSeekBar.progress = -range.lower  // center at 0
+        evSeekBar.progress = -range.lower
         evValueText.text = "0"
     }
 
@@ -225,6 +330,7 @@ class MainActivity : AppCompatActivity() {
         lp.screenBrightness = 0.01f
         window.attributes = lp
         textureView.visibility = View.INVISIBLE
+        ringLightOverlay.visibility = View.GONE
         controlsPanel.visibility = View.GONE
         controlsVisible = false
     }
@@ -233,9 +339,11 @@ class MainActivity : AppCompatActivity() {
         screenOff = false
         screenOffButton.text = "Screen Off"
         val lp = window.attributes
-        lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        lp.screenBrightness = if (ringLightOn) 1.0f
+            else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         window.attributes = lp
         textureView.visibility = View.VISIBLE
+        if (ringLightOn) ringLightOverlay.visibility = View.VISIBLE
         controlsPanel.visibility = View.VISIBLE
         controlsVisible = true
     }
@@ -334,7 +442,10 @@ class MainActivity : AppCompatActivity() {
         cameraStreamer.stop()
         val surface = if (surfaceReady && !screenOff) textureView.surfaceTexture else null
         cameraStreamer.start(surface)
-        configureEvSlider()
+        uiHandler.postDelayed({
+            configureEvSlider()
+            updateCameraLabels()
+        }, 500)
     }
 
     private fun startStreaming() {
@@ -344,8 +455,10 @@ class MainActivity : AppCompatActivity() {
         streaming = true
         updateConnectionInfo()
         toggleButton.text = "Stop"
-        // Configure EV slider once camera reports its range
-        uiHandler.postDelayed({ configureEvSlider() }, 500)
+        uiHandler.postDelayed({
+            configureEvSlider()
+            updateCameraLabels()
+        }, 500)
     }
 
     private fun stopStreaming() {
@@ -379,6 +492,8 @@ class MainActivity : AppCompatActivity() {
         }
         updateAfLabel()
         updateAeLabel()
+        updateCameraLabels()
+        updateTorchLabel()
     }
 
     override fun onDestroy() {
