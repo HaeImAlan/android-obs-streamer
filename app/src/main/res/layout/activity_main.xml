@@ -1,44 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#FF000000"
-    android:gravity="center_horizontal">
+    android:background="#FF000000">
 
     <TextureView
         android:id="@+id/textureView"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_height="match_parent" />
 
+    <!-- Tap anywhere to show/hide controls -->
     <LinearLayout
+        android:id="@+id/controlsPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
         android:orientation="vertical"
         android:padding="16dp"
         android:background="#CC000000">
 
+        <!-- Status + connection info -->
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Waiting for permission..."
             android:textColor="#FFFFFFFF"
-            android:textSize="16sp"
+            android:textSize="14sp"
+            android:fontFamily="monospace"
             android:gravity="center" />
 
         <TextView
             android:id="@+id/connectionInfo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text=""
-            android:textColor="#FFAAAAAA"
-            android:textSize="12sp"
+            android:textColor="#FF888888"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
             android:gravity="center"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="2dp"
             android:visibility="gone" />
 
+        <!-- Settings row: Resolution | FPS -->
+        <LinearLayout
+            android:id="@+id/settingsRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Res"
+                android:textColor="#FF888888"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/resolutionSpinner"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:background="#FF444444" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="FPS"
+                android:textColor="#FF888888"
+                android:textSize="12sp" />
+
+            <Spinner
+                android:id="@+id/fpsSpinner"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp" />
+        </LinearLayout>
+
+        <!-- Action row: Screen Off | Start/Stop -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -46,27 +92,24 @@
             android:gravity="center"
             android:layout_marginTop="8dp">
 
-            <TextView
+            <Button
+                android:id="@+id/screenOffButton"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Resolution: "
-                android:textColor="#FFFFFFFF"
-                android:textSize="14sp" />
+                android:layout_height="40dp"
+                android:text="Screen Off"
+                android:textSize="12sp"
+                android:layout_marginEnd="12dp"
+                android:enabled="false" />
 
-            <Spinner
-                android:id="@+id/resolutionSpinner"
+            <Button
+                android:id="@+id/toggleButton"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
+                android:layout_height="40dp"
+                android:text="Start"
+                android:textSize="12sp"
+                android:enabled="false" />
         </LinearLayout>
 
-        <Button
-            android:id="@+id/toggleButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_marginTop="8dp"
-            android:text="Start"
-            android:enabled="false" />
     </LinearLayout>
 
-</LinearLayout>
+</FrameLayout>

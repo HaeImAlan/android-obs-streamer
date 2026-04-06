@@ -24,6 +24,7 @@ class CameraStreamer(
     private var running = false
 
     var resolution: Size = Size(1280, 720)
+    var targetFps: Int = 30
 
     fun getSupportedResolutions(): List<Size> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -69,7 +70,6 @@ class CameraStreamer(
                 override fun onDisconnected(camera: CameraDevice) {
                     camera.close()
                     cameraDevice = null
-                    // Attempt reopen after delay
                     if (running) {
                         cameraHandler?.postDelayed({ start(surfaceTexture) }, 1000)
                     }
@@ -105,7 +105,7 @@ class CameraStreamer(
                         set(CaptureRequest.JPEG_QUALITY, 85.toByte())
                         set(
                             CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                            Range(15, 30)
+                            Range(targetFps, targetFps)
                         )
                     }
                     session.setRepeatingRequest(request.build(), null, cameraHandler)
@@ -128,7 +128,7 @@ class CameraStreamer(
         } catch (e: CameraAccessException) {
             // ignore
         } catch (e: IllegalStateException) {
-            // ignore — session already closed
+            // ignore
         }
         captureSession = null
         cameraDevice?.close()
@@ -153,7 +153,6 @@ class CameraStreamer(
                 return id
             }
         }
-        // Fallback to first available camera
         return manager.cameraIdList.firstOrNull()
     }
 }
