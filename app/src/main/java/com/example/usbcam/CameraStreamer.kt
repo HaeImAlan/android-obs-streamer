@@ -2,8 +2,10 @@ package com.example.usbcam
 
 import android.content.Context
 import android.graphics.ImageFormat
+import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
+import android.hardware.camera2.params.MeteringRectangle
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
@@ -20,11 +22,21 @@ class CameraStreamer(
     private var imageReader: ImageReader? = null
     private var cameraThread: HandlerThread? = null
     private var cameraHandler: Handler? = null
+    private var requestBuilder: CaptureRequest.Builder? = null
+    private var surfaces: List<Surface> = emptyList()
+    private var sensorArraySize: Rect? = null
     @Volatile
     private var running = false
 
     var resolution: Size = Size(1280, 720)
     var targetFps: Int = 30
+    var continuousAf: Boolean = true
+    var aeLocked: Boolean = false
+    var exposureCompensation: Int = 0
+
+    /** Range of supported EV compensation values */
+    var evRange: Range<Int> = Range(0, 0)
+        private set
 
     fun getSupportedResolutions(): List<Size> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -60,6 +72,12 @@ class CameraStreamer(
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val cameraId = findRearCamera(manager) ?: return
 
+        // Read camera characteristics for focus/exposure support
+        val characteristics = manager.getCameraCharacteristics(cameraId)
+        sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+        evRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
+            ?: Range(0, 0)
+
         try {
             manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
@@ -89,26 +107,23 @@ class CameraStreamer(
 
     private fun createSession(camera: CameraDevice, surfaceTexture: SurfaceTexture?) {
         try {
-            val surfaces = mutableListOf<Surface>()
-            surfaces.add(imageReader!!.surface)
+            val surfaceList = mutableListOf<Surface>()
+            surfaceList.add(imageReader!!.surface)
 
             if (surfaceTexture != null) {
                 surfaceTexture.setDefaultBufferSize(resolution.width, resolution.height)
-                surfaces.add(Surface(surfaceTexture))
+                surfaceList.add(Surface(surfaceTexture))
             }
+            surfaces = surfaceList
 
-            camera.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
+            camera.createCaptureSession(surfaceList, object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     captureSession = session
-                    val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                    requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         surfaces.forEach { addTarget(it) }
                         set(CaptureRequest.JPEG_QUALITY, 85.toByte())
-                        set(
-                            CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                            Range(targetFps, targetFps)
-                        )
                     }
-                    session.setRepeatingRequest(request.build(), null, cameraHandler)
+                    applySettings()
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
@@ -117,6 +132,75 @@ class CameraStreamer(
             }, cameraHandler)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
+        }
+    }
+
+    /** Apply current AF/AE/EV/FPS settings to the repeating request */
+    fun applySettings() {
+        val builder = requestBuilder ?: return
+        val session = captureSession ?: return
+
+        builder.set(
+            CaptureRequest.CONTROL_AF_MODE,
+            if (continuousAf) CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO
+            else CaptureRequest.CONTROL_AF_MODE_AUTO
+        )
+        builder.set(CaptureRequest.CONTROL_AE_LOCK, aeLocked)
+        builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, exposureCompensation)
+        builder.set(
+            CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+            Range(targetFps, targetFps)
+        )
+
+        try {
+            session.setRepeatingRequest(builder.build(), null, cameraHandler)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        } catch (e: IllegalStateException) {
+            // session closed
+        }
+    }
+
+    /**
+     * Tap-to-focus at a point in sensor coordinates.
+     * @param nx normalized X (0..1) within the preview
+     * @param ny normalized Y (0..1) within the preview
+     */
+    fun tapToFocus(nx: Float, ny: Float) {
+        val builder = requestBuilder ?: return
+        val session = captureSession ?: return
+        val sensorRect = sensorArraySize ?: return
+
+        // Map normalized coordinates to sensor area
+        val focusSize = 200
+        val cx = (nx * sensorRect.width()).toInt().coerceIn(focusSize / 2, sensorRect.width() - focusSize / 2)
+        val cy = (ny * sensorRect.height()).toInt().coerceIn(focusSize / 2, sensorRect.height() - focusSize / 2)
+
+        val focusArea = MeteringRectangle(
+            cx - focusSize / 2, cy - focusSize / 2,
+            focusSize, focusSize,
+            MeteringRectangle.METERING_WEIGHT_MAX
+        )
+
+        try {
+            // Cancel any existing AF
+            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL)
+            session.capture(builder.build(), null, cameraHandler)
+
+            // Set focus region and trigger AF
+            builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+            builder.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(focusArea))
+            builder.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(focusArea))
+            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
+            session.capture(builder.build(), null, cameraHandler)
+
+            // Reset trigger for repeating request
+            builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
+            session.setRepeatingRequest(builder.build(), null, cameraHandler)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        } catch (e: IllegalStateException) {
+            // session closed
         }
     }
 
@@ -131,6 +215,7 @@ class CameraStreamer(
             // ignore
         }
         captureSession = null
+        requestBuilder = null
         cameraDevice?.close()
         cameraDevice = null
         imageReader?.close()

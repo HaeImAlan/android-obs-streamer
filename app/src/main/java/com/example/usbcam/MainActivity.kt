@@ -4,7 +4,10 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Size
+import android.view.MotionEvent
 import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
@@ -30,9 +33,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var screenOffButton: Button
     private lateinit var resolutionSpinner: Spinner
     private lateinit var fpsSpinner: Spinner
+    private lateinit var afModeButton: TextView
+    private lateinit var aeLockButton: TextView
+    private lateinit var evSeekBar: SeekBar
+    private lateinit var evValueText: TextView
+    private lateinit var focusRing: View
 
     private val server = MjpegServer()
     private lateinit var cameraStreamer: CameraStreamer
+    private val uiHandler = Handler(Looper.getMainLooper())
     private var streaming = false
     private var surfaceReady = false
     private var screenOff = false
@@ -52,6 +61,12 @@ class MainActivity : AppCompatActivity() {
         screenOffButton = findViewById(R.id.screenOffButton)
         resolutionSpinner = findViewById(R.id.resolutionSpinner)
         fpsSpinner = findViewById(R.id.fpsSpinner)
+        afModeButton = findViewById(R.id.afModeButton)
+        aeLockButton = findViewById(R.id.aeLockButton)
+        evSeekBar = findViewById(R.id.evSeekBar)
+        evValueText = findViewById(R.id.evValueText)
+        focusRing = findViewById(R.id.focusRing)
+        focusRing.setBackgroundResource(R.drawable.focus_ring)
 
         cameraStreamer = CameraStreamer(this, server)
 
@@ -71,8 +86,7 @@ class MainActivity : AppCompatActivity() {
             override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
         }
 
-        // Tap preview to toggle controls visibility
-        textureView.setOnClickListener { toggleControls() }
+        setupTapToFocus()
 
         toggleButton.setOnClickListener {
             if (streaming) stopStreaming() else startStreaming()
@@ -82,9 +96,122 @@ class MainActivity : AppCompatActivity() {
             if (screenOff) screenOn() else screenOff()
         }
 
+        afModeButton.setOnClickListener { toggleAfMode() }
+        aeLockButton.setOnClickListener { toggleAeLock() }
+
         setupFpsSpinner()
+        setupEvSlider()
         requestCameraPermission()
     }
+
+    // ── Tap-to-focus ─────────────────────────────────────────────────────
+
+    private fun setupTapToFocus() {
+        textureView.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_UP -> {
+                    if (streaming) {
+                        val nx = event.x / v.width
+                        val ny = event.y / v.height
+                        cameraStreamer.tapToFocus(nx, ny)
+                        showFocusRing(event.x, event.y)
+                    }
+                    // Also toggle controls on tap
+                    toggleControls()
+                    v.performClick()
+                    true
+                }
+                else -> true
+            }
+        }
+    }
+
+    private fun showFocusRing(x: Float, y: Float) {
+        val size = focusRing.layoutParams.width
+        focusRing.x = x - size / 2f
+        focusRing.y = y - size / 2f
+        focusRing.alpha = 1f
+        focusRing.scaleX = 1.3f
+        focusRing.scaleY = 1.3f
+        focusRing.visibility = View.VISIBLE
+        focusRing.animate()
+            .scaleX(1f).scaleY(1f)
+            .setDuration(200)
+            .start()
+        // Fade out after 1.5s
+        uiHandler.removeCallbacksAndMessages("focus")
+        uiHandler.postDelayed({
+            focusRing.animate().alpha(0f).setDuration(300).withEndAction {
+                focusRing.visibility = View.GONE
+            }.start()
+        }, 1500)
+    }
+
+    // ── AF / AE controls ─────────────────────────────────────────────────
+
+    private fun toggleAfMode() {
+        cameraStreamer.continuousAf = !cameraStreamer.continuousAf
+        updateAfLabel()
+        if (streaming) cameraStreamer.applySettings()
+    }
+
+    private fun toggleAeLock() {
+        cameraStreamer.aeLocked = !cameraStreamer.aeLocked
+        updateAeLabel()
+        if (streaming) cameraStreamer.applySettings()
+    }
+
+    private fun updateAfLabel() {
+        if (cameraStreamer.continuousAf) {
+            afModeButton.text = "AF: Continuous"
+            afModeButton.setTextColor(0xFF00CC66.toInt())
+        } else {
+            afModeButton.text = "AF: Manual"
+            afModeButton.setTextColor(0xFFFFAA00.toInt())
+        }
+    }
+
+    private fun updateAeLabel() {
+        if (cameraStreamer.aeLocked) {
+            aeLockButton.text = "AE: Locked"
+            aeLockButton.setTextColor(0xFFFFAA00.toInt())
+        } else {
+            aeLockButton.text = "AE: Auto"
+            aeLockButton.setTextColor(0xFF00CC66.toInt())
+        }
+    }
+
+    // ── Exposure compensation ────────────────────────────────────────────
+
+    private fun setupEvSlider() {
+        // Will be reconfigured once camera starts and we know the EV range
+        evSeekBar.max = 0
+        evSeekBar.progress = 0
+        evValueText.text = "0"
+
+        evSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val evMin = cameraStreamer.evRange.lower
+                val ev = evMin + progress
+                cameraStreamer.exposureCompensation = ev
+                evValueText.text = if (ev >= 0) "+$ev" else "$ev"
+                if (streaming) cameraStreamer.applySettings()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+        })
+    }
+
+    private fun configureEvSlider() {
+        val range = cameraStreamer.evRange
+        val total = range.upper - range.lower
+        evSeekBar.max = total
+        evSeekBar.progress = -range.lower  // center at 0
+        evValueText.text = "0"
+    }
+
+    // ── Controls visibility ──────────────────────────────────────────────
 
     private fun toggleControls() {
         controlsVisible = !controlsVisible
@@ -94,11 +221,9 @@ class MainActivity : AppCompatActivity() {
     private fun screenOff() {
         screenOff = true
         screenOffButton.text = "Screen On"
-        // Dim screen to minimum
         val lp = window.attributes
         lp.screenBrightness = 0.01f
         window.attributes = lp
-        // Hide preview
         textureView.visibility = View.INVISIBLE
         controlsPanel.visibility = View.GONE
         controlsVisible = false
@@ -107,15 +232,15 @@ class MainActivity : AppCompatActivity() {
     private fun screenOn() {
         screenOff = false
         screenOffButton.text = "Screen Off"
-        // Restore brightness
         val lp = window.attributes
         lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         window.attributes = lp
-        // Show preview
         textureView.visibility = View.VISIBLE
         controlsPanel.visibility = View.VISIBLE
         controlsVisible = true
     }
+
+    // ── Permissions ──────────────────────────────────────────────────────
 
     private fun requestCameraPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -149,13 +274,13 @@ class MainActivity : AppCompatActivity() {
         startStreaming()
     }
 
+    // ── Spinners ─────────────────────────────────────────────────────────
+
     private fun setupFpsSpinner() {
         val labels = FPS_OPTIONS.map { "${it}fps" }
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         fpsSpinner.adapter = adapter
-
-        // Default to 30fps
         fpsSpinner.setSelection(FPS_OPTIONS.indexOf(30).coerceAtLeast(0))
 
         fpsSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -163,7 +288,7 @@ class MainActivity : AppCompatActivity() {
                 val newFps = FPS_OPTIONS[pos]
                 if (newFps != cameraStreamer.targetFps) {
                     cameraStreamer.targetFps = newFps
-                    if (streaming) restartCamera()
+                    if (streaming) cameraStreamer.applySettings()
                 }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -203,10 +328,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ── Streaming lifecycle ──────────────────────────────────────────────
+
     private fun restartCamera() {
         cameraStreamer.stop()
         val surface = if (surfaceReady && !screenOff) textureView.surfaceTexture else null
         cameraStreamer.start(surface)
+        configureEvSlider()
     }
 
     private fun startStreaming() {
@@ -216,6 +344,8 @@ class MainActivity : AppCompatActivity() {
         streaming = true
         updateConnectionInfo()
         toggleButton.text = "Stop"
+        // Configure EV slider once camera reports its range
+        uiHandler.postDelayed({ configureEvSlider() }, 500)
     }
 
     private fun stopStreaming() {
@@ -231,7 +361,6 @@ class MainActivity : AppCompatActivity() {
         val ip = getDeviceIp()
         val wifiLine = if (ip != null) "wifi  http://$ip:4747/video" else "wifi  not connected"
         val adbLine = "usb   adb forward tcp:4747 tcp:4747"
-
         statusText.text = "Streaming :4747"
         connectionInfo.text = "$wifiLine\n$adbLine"
         connectionInfo.visibility = View.VISIBLE
@@ -248,6 +377,8 @@ class MainActivity : AppCompatActivity() {
             val surface = if (surfaceReady && !screenOff) textureView.surfaceTexture else null
             cameraStreamer.start(surface)
         }
+        updateAfLabel()
+        updateAeLabel()
     }
 
     override fun onDestroy() {
