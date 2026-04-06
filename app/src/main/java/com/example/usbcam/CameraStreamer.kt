@@ -15,7 +15,8 @@ import android.view.Surface
 
 class CameraStreamer(
     private val context: Context,
-    private val server: MjpegServer
+    private val server: MjpegServer,
+    private val rawServer: RawStreamServer? = null
 ) {
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
@@ -70,6 +71,7 @@ class CameraStreamer(
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
                 server.latestFrame = bytes
+                rawServer?.latestFrame = bytes
             } finally {
                 image.close()
             }

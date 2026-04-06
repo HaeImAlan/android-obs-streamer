@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity() {
 
     // State
     private val server = MjpegServer()
+    private val rawServer = RawStreamServer()
     private lateinit var cameraStreamer: CameraStreamer
     private val uiHandler = Handler(Looper.getMainLooper())
     private var wakeLock: PowerManager.WakeLock? = null
@@ -66,7 +67,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         bindViews()
-        cameraStreamer = CameraStreamer(this, server)
+        cameraStreamer = CameraStreamer(this, server, rawServer)
 
         setupTextureView()
         setupTapToFocus()
@@ -509,6 +510,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startStreaming() {
         server.start()
+        rawServer.start()
         cameraStreamer.deviceRotation = windowManager.defaultDisplay.rotation
         val surface = if (surfaceReady && !screenOff) textureView.surfaceTexture else null
         cameraStreamer.start(surface)
@@ -524,6 +526,7 @@ class MainActivity : AppCompatActivity() {
     private fun stopStreaming() {
         cameraStreamer.stop()
         server.stop()
+        rawServer.stop()
         streaming = false
         statusBar.text = "Stopped"
         connectionInfo.visibility = View.GONE
@@ -532,13 +535,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateStatusBar() {
         val ip = getDeviceIp()
-        val statusLine = if (ip != null) "http://$ip:4747" else ":4747"
+        val statusLine = if (ip != null) "$ip :4747/:4748" else ":4747/:4748"
         statusBar.text = statusLine
         statusBar.visibility = View.VISIBLE
 
-        val wifiLine = if (ip != null) "wifi  http://$ip:4747/video" else "wifi  not connected"
-        val adbLine = "usb   adb forward tcp:4747 tcp:4747\n      http://localhost:4747/video"
-        connectionInfo.text = "$wifiLine\n$adbLine"
+        val wifiLine = if (ip != null) "wifi  $ip" else "wifi  not connected"
+        val mjpeg = "mjpeg :4747/video (OBS Media Source)"
+        val raw = "raw   :4748 (OBS native plugin)"
+        val adb = "usb   adb forward tcp:4747 tcp:4747\n      adb forward tcp:4748 tcp:4748"
+        connectionInfo.text = "$wifiLine\n$mjpeg\n$raw\n$adb"
         connectionInfo.visibility = View.VISIBLE
     }
 
@@ -566,6 +571,7 @@ class MainActivity : AppCompatActivity() {
         wakeLock?.let { if (it.isHeld) it.release() }
         cameraStreamer.stop()
         server.stop()
+        rawServer.stop()
     }
 
     private fun getDeviceIp(): String? {

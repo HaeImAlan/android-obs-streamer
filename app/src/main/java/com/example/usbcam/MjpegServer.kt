@@ -26,6 +26,7 @@ class MjpegServer(private val port: Int = 4747) {
                 while (running) {
                     try {
                         val socket = serverSocket?.accept() ?: break
+                        socket.tcpNoDelay = true
                         val session = StreamSession(socket, this)
                         sessions.add(session)
                         session.start()
