@@ -2,17 +2,16 @@ package com.example.usbcam
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.SurfaceTexture
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Size
-import android.view.MotionEvent
-import android.view.TextureView
-import android.view.View
-import android.view.WindowManager
+import android.view.*
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -27,10 +26,12 @@ class MainActivity : AppCompatActivity() {
         private val FPS_OPTIONS = intArrayOf(10, 15, 20, 24, 30, 60)
     }
 
+    // Views
     private lateinit var textureView: TextureView
-    private lateinit var statusText: TextView
-    private lateinit var connectionInfo: TextView
+    private lateinit var statusBar: TextView
+    private lateinit var menuButton: TextView
     private lateinit var controlsPanel: View
+    private lateinit var connectionInfo: TextView
     private lateinit var toggleButton: Button
     private lateinit var screenOffButton: Button
     private lateinit var resolutionSpinner: Spinner
@@ -47,25 +48,44 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ringLightBrightnessRow: View
     private lateinit var ringLightSeekBar: SeekBar
 
+    // State
     private val server = MjpegServer()
     private lateinit var cameraStreamer: CameraStreamer
     private val uiHandler = Handler(Looper.getMainLooper())
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var orientationListener: OrientationEventListener? = null
     private var streaming = false
     private var surfaceReady = false
     private var screenOff = false
-    private var controlsVisible = true
+    private var menuOpen = false
     private var ringLightOn = false
-
     private val availableResolutions = mutableListOf<Size>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        bindViews()
+        cameraStreamer = CameraStreamer(this, server)
+
+        setupTextureView()
+        setupTapToFocus()
+        setupMenuButton()
+        setupButtons()
+        setupFpsSpinner()
+        setupEvSlider()
+        setupRingLightSlider()
+        setupOrientationListener()
+        acquireWakeLock()
+        requestCameraPermission()
+    }
+
+    private fun bindViews() {
         textureView = findViewById(R.id.textureView)
-        statusText = findViewById(R.id.statusText)
-        connectionInfo = findViewById(R.id.connectionInfo)
+        statusBar = findViewById(R.id.statusBar)
+        menuButton = findViewById(R.id.menuButton)
         controlsPanel = findViewById(R.id.controlsPanel)
+        connectionInfo = findViewById(R.id.connectionInfo)
         toggleButton = findViewById(R.id.toggleButton)
         screenOffButton = findViewById(R.id.screenOffButton)
         resolutionSpinner = findViewById(R.id.resolutionSpinner)
@@ -82,9 +102,50 @@ class MainActivity : AppCompatActivity() {
         ringLightOverlay = findViewById(R.id.ringLightOverlay)
         ringLightBrightnessRow = findViewById(R.id.ringLightBrightnessRow)
         ringLightSeekBar = findViewById(R.id.ringLightSeekBar)
+    }
 
-        cameraStreamer = CameraStreamer(this, server)
+    // ── Wake lock ────────────────────────────────────────────────────────
 
+    private fun acquireWakeLock() {
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK, "usbcam:streaming"
+        )
+        wakeLock?.acquire()
+    }
+
+    // ── Orientation ──────────────────────────────────────────────────────
+
+    private fun setupOrientationListener() {
+        orientationListener = object : OrientationEventListener(this) {
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == ORIENTATION_UNKNOWN) return
+                val rotation = when {
+                    orientation in 315..360 || orientation in 0..44 -> Surface.ROTATION_0
+                    orientation in 45..134 -> Surface.ROTATION_270
+                    orientation in 135..224 -> Surface.ROTATION_180
+                    orientation in 225..314 -> Surface.ROTATION_90
+                    else -> Surface.ROTATION_0
+                }
+                if (rotation != cameraStreamer.deviceRotation) {
+                    cameraStreamer.deviceRotation = rotation
+                    if (streaming) cameraStreamer.applySettings()
+                }
+            }
+        }
+        orientationListener?.enable()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Layout handles itself — just update rotation
+        cameraStreamer.deviceRotation = windowManager.defaultDisplay.rotation
+        if (streaming) cameraStreamer.applySettings()
+    }
+
+    // ── TextureView ──────────────────────────────────────────────────────
+
+    private fun setupTextureView() {
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
                 surfaceReady = true
@@ -100,37 +161,51 @@ class MainActivity : AppCompatActivity() {
             }
             override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
         }
+    }
 
-        setupTapToFocus()
+    // ── Menu drawer ──────────────────────────────────────────────────────
 
+    private fun setupMenuButton() {
+        menuButton.setOnClickListener { toggleMenu() }
+    }
+
+    private fun toggleMenu() {
+        menuOpen = !menuOpen
+        if (menuOpen) {
+            controlsPanel.visibility = View.VISIBLE
+            controlsPanel.translationX = controlsPanel.width.toFloat()
+            controlsPanel.animate().translationX(0f).setDuration(200).start()
+            menuButton.text = "X"
+        } else {
+            controlsPanel.animate().translationX(controlsPanel.width.toFloat())
+                .setDuration(200)
+                .withEndAction { controlsPanel.visibility = View.GONE }
+                .start()
+            menuButton.text = "..."
+        }
+    }
+
+    // ── Buttons ──────────────────────────────────────────────────────────
+
+    private fun setupButtons() {
         toggleButton.setOnClickListener {
             if (streaming) stopStreaming() else startStreaming()
         }
-
         screenOffButton.setOnClickListener {
             if (screenOff) screenOn() else screenOff()
         }
-
         cameraSwitchButton.setOnClickListener { switchCamera() }
         torchButton.setOnClickListener { toggleTorch() }
         ringLightButton.setOnClickListener { toggleRingLight() }
         afModeButton.setOnClickListener { toggleAfMode() }
         aeLockButton.setOnClickListener { toggleAeLock() }
-
-        setupFpsSpinner()
-        setupEvSlider()
-        setupRingLightSlider()
-        requestCameraPermission()
     }
 
     // ── Camera switch ────────────────────────────────────────────────────
 
     private fun switchCamera() {
         cameraStreamer.useFrontCamera = !cameraStreamer.useFrontCamera
-        // Turn off torch when switching to front
-        if (cameraStreamer.useFrontCamera) {
-            cameraStreamer.torchEnabled = false
-        }
+        if (cameraStreamer.useFrontCamera) cameraStreamer.torchEnabled = false
         updateCameraLabels()
         if (streaming) restartCamera()
     }
@@ -139,14 +214,11 @@ class MainActivity : AppCompatActivity() {
         val isFront = cameraStreamer.useFrontCamera
         cameraSwitchButton.text = if (isFront) "Front Cam" else "Back Cam"
         cameraSwitchButton.setTextColor(if (isFront) 0xFFFFAA00.toInt() else 0xFF00CC66.toInt())
-
-        // Torch only available on back camera with flash
-        val torchAvailable = !isFront && cameraStreamer.hasFlash
-        torchButton.isEnabled = torchAvailable
+        torchButton.isEnabled = !isFront && cameraStreamer.hasFlash
         updateTorchLabel()
     }
 
-    // ── Torch (back camera flash as continuous light) ────────────────────
+    // ── Torch ────────────────────────────────────────────────────────────
 
     private fun toggleTorch() {
         if (cameraStreamer.useFrontCamera) return
@@ -165,7 +237,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ── Ring light (screen as light source for front camera) ─────────────
+    // ── Ring light ───────────────────────────────────────────────────────
 
     private fun toggleRingLight() {
         ringLightOn = !ringLightOn
@@ -173,18 +245,16 @@ class MainActivity : AppCompatActivity() {
             updateRingLightBrightness(ringLightSeekBar.progress)
             ringLightOverlay.visibility = View.VISIBLE
             ringLightBrightnessRow.visibility = View.VISIBLE
-            ringLightButton.text = "Ring Light"
+            ringLightButton.text = "Ring Light: On"
             ringLightButton.setTextColor(0xFFFFCC00.toInt())
-            // Max screen brightness
             val lp = window.attributes
             lp.screenBrightness = 1.0f
             window.attributes = lp
         } else {
             ringLightOverlay.visibility = View.GONE
             ringLightBrightnessRow.visibility = View.GONE
-            ringLightButton.text = "Ring Light"
+            ringLightButton.text = "Ring Light: Off"
             ringLightButton.setTextColor(0xFF888888.toInt())
-            // Restore brightness
             if (!screenOff) {
                 val lp = window.attributes
                 lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
@@ -194,8 +264,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRingLightSlider() {
-        ringLightSeekBar.max = 255
-        ringLightSeekBar.progress = 200
         ringLightSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (ringLightOn) updateRingLightBrightness(progress)
@@ -224,7 +292,6 @@ class MainActivity : AppCompatActivity() {
                         cameraStreamer.tapToFocus(nx, ny)
                         showFocusRing(event.x, event.y)
                     }
-                    toggleControls()
                     v.performClick()
                     true
                 }
@@ -241,10 +308,7 @@ class MainActivity : AppCompatActivity() {
         focusRing.scaleX = 1.3f
         focusRing.scaleY = 1.3f
         focusRing.visibility = View.VISIBLE
-        focusRing.animate()
-            .scaleX(1f).scaleY(1f)
-            .setDuration(200)
-            .start()
+        focusRing.animate().scaleX(1f).scaleY(1f).setDuration(200).start()
         uiHandler.removeCallbacksAndMessages("focus")
         uiHandler.postDelayed({
             focusRing.animate().alpha(0f).setDuration(300).withEndAction {
@@ -253,7 +317,7 @@ class MainActivity : AppCompatActivity() {
         }, 1500)
     }
 
-    // ── AF / AE controls ─────────────────────────────────────────────────
+    // ── AF / AE ──────────────────────────────────────────────────────────
 
     private fun toggleAfMode() {
         cameraStreamer.continuousAf = !cameraStreamer.continuousAf
@@ -269,17 +333,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateAfLabel() {
         if (cameraStreamer.continuousAf) {
-            afModeButton.text = "AF: Continuous"
+            afModeButton.text = "AF: Cont"
             afModeButton.setTextColor(0xFF00CC66.toInt())
         } else {
-            afModeButton.text = "AF: Manual"
+            afModeButton.text = "AF: Tap"
             afModeButton.setTextColor(0xFFFFAA00.toInt())
         }
     }
 
     private fun updateAeLabel() {
         if (cameraStreamer.aeLocked) {
-            aeLockButton.text = "AE: Locked"
+            aeLockButton.text = "AE: Lock"
             aeLockButton.setTextColor(0xFFFFAA00.toInt())
         } else {
             aeLockButton.text = "AE: Auto"
@@ -297,8 +361,7 @@ class MainActivity : AppCompatActivity() {
         evSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                val evMin = cameraStreamer.evRange.lower
-                val ev = evMin + progress
+                val ev = cameraStreamer.evRange.lower + progress
                 cameraStreamer.exposureCompensation = ev
                 evValueText.text = if (ev >= 0) "+$ev" else "$ev"
                 if (streaming) cameraStreamer.applySettings()
@@ -310,18 +373,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun configureEvSlider() {
         val range = cameraStreamer.evRange
-        val total = range.upper - range.lower
-        evSeekBar.max = total
+        evSeekBar.max = range.upper - range.lower
         evSeekBar.progress = -range.lower
         evValueText.text = "0"
     }
 
-    // ── Controls visibility ──────────────────────────────────────────────
-
-    private fun toggleControls() {
-        controlsVisible = !controlsVisible
-        controlsPanel.visibility = if (controlsVisible) View.VISIBLE else View.GONE
-    }
+    // ── Screen off ───────────────────────────────────────────────────────
 
     private fun screenOff() {
         screenOff = true
@@ -331,8 +388,9 @@ class MainActivity : AppCompatActivity() {
         window.attributes = lp
         textureView.visibility = View.INVISIBLE
         ringLightOverlay.visibility = View.GONE
-        controlsPanel.visibility = View.GONE
-        controlsVisible = false
+        statusBar.visibility = View.GONE
+        menuButton.visibility = View.GONE
+        if (menuOpen) toggleMenu()
     }
 
     private fun screenOn() {
@@ -344,8 +402,8 @@ class MainActivity : AppCompatActivity() {
         window.attributes = lp
         textureView.visibility = View.VISIBLE
         if (ringLightOn) ringLightOverlay.visibility = View.VISIBLE
-        controlsPanel.visibility = View.VISIBLE
-        controlsVisible = true
+        menuButton.visibility = View.VISIBLE
+        if (streaming) statusBar.visibility = View.VISIBLE
     }
 
     // ── Permissions ──────────────────────────────────────────────────────
@@ -370,7 +428,8 @@ class MainActivity : AppCompatActivity() {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 onPermissionGranted()
             } else {
-                statusText.text = "Camera permission denied"
+                statusBar.text = "Camera permission denied"
+                statusBar.visibility = View.VISIBLE
             }
         }
     }
@@ -450,10 +509,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun startStreaming() {
         server.start()
+        cameraStreamer.deviceRotation = windowManager.defaultDisplay.rotation
         val surface = if (surfaceReady && !screenOff) textureView.surfaceTexture else null
         cameraStreamer.start(surface)
         streaming = true
-        updateConnectionInfo()
+        updateStatusBar()
         toggleButton.text = "Stop"
         uiHandler.postDelayed({
             configureEvSlider()
@@ -465,16 +525,19 @@ class MainActivity : AppCompatActivity() {
         cameraStreamer.stop()
         server.stop()
         streaming = false
-        statusText.text = "Stopped"
+        statusBar.text = "Stopped"
         connectionInfo.visibility = View.GONE
         toggleButton.text = "Start"
     }
 
-    private fun updateConnectionInfo() {
+    private fun updateStatusBar() {
         val ip = getDeviceIp()
+        val statusLine = if (ip != null) "http://$ip:4747" else ":4747"
+        statusBar.text = statusLine
+        statusBar.visibility = View.VISIBLE
+
         val wifiLine = if (ip != null) "wifi  http://$ip:4747/video" else "wifi  not connected"
-        val adbLine = "usb   adb forward tcp:4747 tcp:4747"
-        statusText.text = "Streaming :4747"
+        val adbLine = "usb   adb forward tcp:4747 tcp:4747\n      http://localhost:4747/video"
         connectionInfo.text = "$wifiLine\n$adbLine"
         connectionInfo.visibility = View.VISIBLE
     }
@@ -487,6 +550,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (streaming) {
+            cameraStreamer.deviceRotation = windowManager.defaultDisplay.rotation
             val surface = if (surfaceReady && !screenOff) textureView.surfaceTexture else null
             cameraStreamer.start(surface)
         }
@@ -498,6 +562,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        orientationListener?.disable()
+        wakeLock?.let { if (it.isHeld) it.release() }
         cameraStreamer.stop()
         server.stop()
     }

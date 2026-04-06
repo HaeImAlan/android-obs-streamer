@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Ring light overlay (full-screen white border, hidden by default) -->
+    <!-- Ring light overlay -->
     <View
         android:id="@+id/ringLightOverlay"
         android:layout_width="match_parent"
@@ -23,277 +23,294 @@
         android:layout_height="80dp"
         android:visibility="gone" />
 
-    <!-- Controls overlay -->
-    <LinearLayout
-        android:id="@+id/controlsPanel"
-        android:layout_width="match_parent"
+    <!-- Minimal status bar at top -->
+    <TextView
+        android:id="@+id/statusBar"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:orientation="vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="12dp"
-        android:background="#CC000000">
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="8dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:background="#88000000"
+        android:textColor="#FFFFFFFF"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:text=""
+        android:visibility="gone" />
 
-        <!-- Status -->
-        <TextView
-            android:id="@+id/statusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Waiting for permission..."
-            android:textColor="#FFFFFFFF"
-            android:textSize="14sp"
-            android:fontFamily="monospace"
-            android:gravity="center" />
+    <!-- Gear button (always visible, top-right) -->
+    <TextView
+        android:id="@+id/menuButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:gravity="center"
+        android:text="..."
+        android:textColor="#CCFFFFFF"
+        android:textSize="20sp"
+        android:background="#44000000" />
 
-        <TextView
-            android:id="@+id/connectionInfo"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="#FF888888"
-            android:textSize="11sp"
-            android:fontFamily="monospace"
-            android:gravity="center"
-            android:layout_marginTop="2dp"
-            android:visibility="gone" />
+    <!-- Slide-out controls panel -->
+    <ScrollView
+        android:id="@+id/controlsPanel"
+        android:layout_width="260dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:background="#EE111111"
+        android:visibility="gone"
+        android:fillViewport="true">
 
-        <!-- Row 1: Camera switch | Torch | Ring Light -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="10dp">
+            android:orientation="vertical"
+            android:padding="14dp">
 
+            <!-- Connection info -->
             <TextView
-                android:id="@+id/cameraSwitchButton"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:gravity="center"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:text="Back Cam"
-                android:textColor="#FF00CC66"
-                android:textSize="12sp"
-                android:background="?android:attr/selectableItemBackground" />
+                android:id="@+id/connectionInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FFAAAAAA"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="2dp"
+                android:visibility="gone" />
 
-            <View
-                android:layout_width="1dp"
-                android:layout_height="20dp"
-                android:layout_marginStart="10dp"
-                android:layout_marginEnd="10dp"
-                android:background="#FF444444" />
-
+            <!-- Section: Stream -->
             <TextView
-                android:id="@+id/torchButton"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:gravity="center"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:text="Torch: Off"
-                android:textColor="#FF888888"
-                android:textSize="12sp"
-                android:background="?android:attr/selectableItemBackground" />
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="STREAM"
+                android:textColor="#FF666666"
+                android:textSize="10sp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp" />
 
-            <View
-                android:layout_width="1dp"
-                android:layout_height="20dp"
-                android:layout_marginStart="10dp"
-                android:layout_marginEnd="10dp"
-                android:background="#FF444444" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <Button
+                    android:id="@+id/toggleButton"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:text="Start"
+                    android:textSize="12sp"
+                    android:enabled="false" />
+
+                <Button
+                    android:id="@+id/screenOffButton"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    android:text="Screen Off"
+                    android:textSize="11sp"
+                    android:enabled="false" />
+            </LinearLayout>
+
+            <!-- Section: Camera -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="CAMERA"
+                android:textColor="#FF666666"
+                android:textSize="10sp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/cameraSwitchButton"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="Back Cam"
+                    android:textColor="#FF00CC66"
+                    android:textSize="12sp"
+                    android:background="?android:attr/selectableItemBackground" />
+
+                <TextView
+                    android:id="@+id/torchButton"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="Torch: Off"
+                    android:textColor="#FF888888"
+                    android:textSize="12sp"
+                    android:background="?android:attr/selectableItemBackground" />
+            </LinearLayout>
+
+            <!-- Res -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="6dp">
+
+                <TextView
+                    android:layout_width="32dp"
+                    android:layout_height="wrap_content"
+                    android:text="Res"
+                    android:textColor="#FF888888"
+                    android:textSize="11sp" />
+
+                <Spinner
+                    android:id="@+id/resolutionSpinner"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1" />
+            </LinearLayout>
+
+            <!-- FPS -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:layout_width="32dp"
+                    android:layout_height="wrap_content"
+                    android:text="FPS"
+                    android:textColor="#FF888888"
+                    android:textSize="11sp" />
+
+                <Spinner
+                    android:id="@+id/fpsSpinner"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1" />
+            </LinearLayout>
+
+            <!-- Section: Focus & Exposure -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="FOCUS / EXPOSURE"
+                android:textColor="#FF666666"
+                android:textSize="10sp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/afModeButton"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="AF: Cont"
+                    android:textColor="#FF00CC66"
+                    android:textSize="12sp"
+                    android:background="?android:attr/selectableItemBackground" />
+
+                <TextView
+                    android:id="@+id/aeLockButton"
+                    android:layout_width="0dp"
+                    android:layout_height="30dp"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="AE: Auto"
+                    android:textColor="#FF00CC66"
+                    android:textSize="12sp"
+                    android:background="?android:attr/selectableItemBackground" />
+            </LinearLayout>
+
+            <!-- EV slider -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="6dp">
+
+                <TextView
+                    android:layout_width="24dp"
+                    android:layout_height="wrap_content"
+                    android:text="EV"
+                    android:textColor="#FF888888"
+                    android:textSize="11sp" />
+
+                <SeekBar
+                    android:id="@+id/evSeekBar"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/evValueText"
+                    android:layout_width="30dp"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="11sp"
+                    android:gravity="center" />
+            </LinearLayout>
+
+            <!-- Section: Lighting -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="LIGHTING"
+                android:textColor="#FF666666"
+                android:textSize="10sp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="4dp" />
 
             <TextView
                 android:id="@+id/ringLightButton"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_width="match_parent"
+                android:layout_height="30dp"
                 android:gravity="center"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:text="Ring Light"
+                android:text="Ring Light: Off"
                 android:textColor="#FF888888"
                 android:textSize="12sp"
                 android:background="?android:attr/selectableItemBackground" />
+
+            <!-- Ring light brightness -->
+            <LinearLayout
+                android:id="@+id/ringLightBrightnessRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="4dp"
+                android:visibility="gone">
+
+                <SeekBar
+                    android:id="@+id/ringLightSeekBar"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:max="255"
+                    android:progress="200" />
+            </LinearLayout>
+
         </LinearLayout>
-
-        <!-- Row 2: Res | FPS -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="6dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Res"
-                android:textColor="#FF888888"
-                android:textSize="12sp" />
-
-            <Spinner
-                android:id="@+id/resolutionSpinner"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:layout_marginStart="4dp" />
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="20dp"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="12dp"
-                android:background="#FF444444" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="FPS"
-                android:textColor="#FF888888"
-                android:textSize="12sp" />
-
-            <Spinner
-                android:id="@+id/fpsSpinner"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:layout_marginStart="4dp" />
-        </LinearLayout>
-
-        <!-- Row 3: AF mode | AE lock -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="6dp">
-
-            <TextView
-                android:id="@+id/afModeButton"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:gravity="center"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:text="AF: Continuous"
-                android:textColor="#FF00CC66"
-                android:textSize="12sp"
-                android:background="?android:attr/selectableItemBackground" />
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="20dp"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="12dp"
-                android:background="#FF444444" />
-
-            <TextView
-                android:id="@+id/aeLockButton"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:gravity="center"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:text="AE: Auto"
-                android:textColor="#FF00CC66"
-                android:textSize="12sp"
-                android:background="?android:attr/selectableItemBackground" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="Tap preview to focus"
-                android:textColor="#FF555555"
-                android:textSize="10sp" />
-        </LinearLayout>
-
-        <!-- Row 4: Exposure compensation slider -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="6dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="EV"
-                android:textColor="#FF888888"
-                android:textSize="12sp" />
-
-            <SeekBar
-                android:id="@+id/evSeekBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:layout_marginEnd="8dp" />
-
-            <TextView
-                android:id="@+id/evValueText"
-                android:layout_width="36dp"
-                android:layout_height="wrap_content"
-                android:text="0"
-                android:textColor="#FFFFFFFF"
-                android:textSize="12sp"
-                android:gravity="center" />
-        </LinearLayout>
-
-        <!-- Row 5: Ring light brightness (shown when ring light on) -->
-        <LinearLayout
-            android:id="@+id/ringLightBrightnessRow"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="6dp"
-            android:visibility="gone">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Light"
-                android:textColor="#FF888888"
-                android:textSize="12sp" />
-
-            <SeekBar
-                android:id="@+id/ringLightSeekBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:layout_marginEnd="8dp"
-                android:max="255"
-                android:progress="200" />
-        </LinearLayout>
-
-        <!-- Row 6: Buttons -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="8dp">
-
-            <Button
-                android:id="@+id/screenOffButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="Screen Off"
-                android:textSize="12sp"
-                android:layout_marginEnd="12dp"
-                android:enabled="false" />
-
-            <Button
-                android:id="@+id/toggleButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="Start"
-                android:textSize="12sp"
-                android:enabled="false" />
-        </LinearLayout>
-
-    </LinearLayout>
+    </ScrollView>
 
 </FrameLayout>

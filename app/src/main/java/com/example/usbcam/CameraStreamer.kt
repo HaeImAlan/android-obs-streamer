@@ -25,6 +25,7 @@ class CameraStreamer(
     private var requestBuilder: CaptureRequest.Builder? = null
     private var surfaces: List<Surface> = emptyList()
     private var sensorArraySize: Rect? = null
+    private var sensorOrientation: Int = 0
     @Volatile
     private var running = false
 
@@ -35,6 +36,7 @@ class CameraStreamer(
     var exposureCompensation: Int = 0
     var useFrontCamera: Boolean = false
     var torchEnabled: Boolean = false
+    var deviceRotation: Int = 0  // Surface.ROTATION_0, etc.
 
     var evRange: Range<Int> = Range(0, 0)
         private set
@@ -78,6 +80,7 @@ class CameraStreamer(
 
         val characteristics = manager.getCameraCharacteristics(cameraId)
         sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+        sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
         evRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)
             ?: Range(0, 0)
         hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) ?: false
@@ -139,6 +142,21 @@ class CameraStreamer(
         }
     }
 
+    private fun computeJpegOrientation(): Int {
+        val deviceDegrees = when (deviceRotation) {
+            Surface.ROTATION_0 -> 0
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+        return if (useFrontCamera) {
+            (sensorOrientation - deviceDegrees + 360) % 360
+        } else {
+            (sensorOrientation + deviceDegrees) % 360
+        }
+    }
+
     fun applySettings() {
         val builder = requestBuilder ?: return
         val session = captureSession ?: return
@@ -154,8 +172,8 @@ class CameraStreamer(
             CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
             Range(targetFps, targetFps)
         )
+        builder.set(CaptureRequest.JPEG_ORIENTATION, computeJpegOrientation())
 
-        // Torch (only works on back camera with flash)
         if (hasFlash && !useFrontCamera) {
             builder.set(
                 CaptureRequest.FLASH_MODE,
