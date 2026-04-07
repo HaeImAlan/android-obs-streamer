@@ -1,11 +1,15 @@
 /*
  * obs-android-usbcam — Native OBS source plugin
  *
- * Two transport modes:
- *   - "raw"   : Raw TCP (port 4748). "ACAM" magic + [u32 BE size][JPEG]
- *   - "http"  : Legacy MJPEG over HTTP (port 4747). multipart/x-mixed-replace
+ * Three transport modes:
+ *   - "usb"   : USB via bundled adb. Auto `adb forward tcp:PORT tcp:PORT`
+ *               then talks raw TCP to 127.0.0.1
+ *   - "raw"   : Raw TCP over Wi-Fi (port 4748). "ACAM" magic +
+ *               [u32 BE size][JPEG]
+ *   - "http"  : Legacy MJPEG over HTTP (port 4747).
  *
- * Both modes decode JPEG with stb_image and push frames straight into OBS.
+ * Bundled adb is shipped under data/obs-plugins/obs-android-usbcam/adb/.
+ * On module unload we run `adb kill-server` so OBS exit cleans up.
  */
 
 #include <obs-module.h>
@@ -23,11 +27,13 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
 #pragma comment(lib, "ws2_32.lib")
 typedef SOCKET sock_t;
 #define SOCK_INVALID INVALID_SOCKET
 #define sock_close closesocket
 #define sock_errno WSAGetLastError()
+#define ADB_EXE "adb.exe"
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -36,10 +42,14 @@ typedef SOCKET sock_t;
 #include <netdb.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 typedef int sock_t;
 #define SOCK_INVALID (-1)
 #define sock_close close
 #define sock_errno errno
+#define ADB_EXE "adb"
 #endif
 
 OBS_DECLARE_MODULE()
@@ -52,16 +62,18 @@ MODULE_EXPORT const char *obs_module_description(void)
 
 /* ── Source data ───────────────────────────────────────────────────── */
 
-#define MODE_RAW  0
-#define MODE_HTTP 1
+#define MODE_USB  0
+#define MODE_RAW  1
+#define MODE_HTTP 2
 
 struct usbcam_source {
 	obs_source_t *source;
 	char *host;
 	int port;
-	int mode;            /* MODE_RAW or MODE_HTTP */
+	int mode;            /* MODE_USB / MODE_RAW / MODE_HTTP */
 	bool reconnect;
 	int reconnect_ms;
+	bool adb_forwarded;  /* USB mode: did we set up a forward? */
 
 	pthread_t thread;
 	volatile bool running;
@@ -83,6 +95,102 @@ static void net_init(void)
 		inited = true;
 	}
 #endif
+}
+
+/* ── ADB helpers ──────────────────────────────────────────────────── */
+
+/* Resolved at module load via obs_module_file("adb/" ADB_EXE).
+ * Empty string if the bundled adb wasn't shipped. */
+static char g_adb_path[1024] = {0};
+
+static void adb_locate(void)
+{
+	char *p = obs_module_file("adb/" ADB_EXE);
+	if (p) {
+		snprintf(g_adb_path, sizeof(g_adb_path), "%s", p);
+		bfree(p);
+		blog(LOG_INFO, "[android-usbcam] Bundled adb at %s",
+		     g_adb_path);
+	} else {
+		blog(LOG_WARNING,
+		     "[android-usbcam] Bundled adb not found — USB mode "
+		     "will require adb on PATH");
+		/* Fall back to "adb" on PATH */
+		snprintf(g_adb_path, sizeof(g_adb_path), "%s", ADB_EXE);
+	}
+}
+
+/* Run adb with up to 3 args, wait up to 5s, return true on success. */
+static bool adb_run(const char *a1, const char *a2, const char *a3)
+{
+	if (g_adb_path[0] == 0)
+		return false;
+
+#ifdef _WIN32
+	char cmd[2048];
+	int n = snprintf(cmd, sizeof(cmd), "\"%s\"", g_adb_path);
+	if (a1) n += snprintf(cmd + n, sizeof(cmd) - n, " %s", a1);
+	if (a2) n += snprintf(cmd + n, sizeof(cmd) - n, " %s", a2);
+	if (a3) n += snprintf(cmd + n, sizeof(cmd) - n, " %s", a3);
+
+	STARTUPINFOA si;
+	PROCESS_INFORMATION pi;
+	memset(&si, 0, sizeof(si));
+	memset(&pi, 0, sizeof(pi));
+	si.cb = sizeof(si);
+	si.dwFlags = STARTF_USESHOWWINDOW;
+	si.wShowWindow = SW_HIDE;
+
+	if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE,
+			    CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+		blog(LOG_WARNING, "[android-usbcam] adb spawn failed: %s",
+		     cmd);
+		return false;
+	}
+	WaitForSingleObject(pi.hProcess, 5000);
+	DWORD code = 1;
+	GetExitCodeProcess(pi.hProcess, &code);
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+	return code == 0;
+#else
+	pid_t pid = fork();
+	if (pid < 0)
+		return false;
+	if (pid == 0) {
+		/* child — silence stdout/stderr */
+		int devnull = open("/dev/null", O_WRONLY);
+		if (devnull >= 0) {
+			dup2(devnull, 1);
+			dup2(devnull, 2);
+			close(devnull);
+		}
+		execl(g_adb_path, "adb", a1, a2, a3, (char *)NULL);
+		_exit(127);
+	}
+	int status = 0;
+	waitpid(pid, &status, 0);
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#endif
+}
+
+static bool adb_forward(int port)
+{
+	char a2[32], a3[32];
+	snprintf(a2, sizeof(a2), "tcp:%d", port);
+	snprintf(a3, sizeof(a3), "tcp:%d", port);
+	bool ok = adb_run("forward", a2, a3);
+	blog(ok ? LOG_INFO : LOG_WARNING,
+	     "[android-usbcam] adb forward tcp:%d -> tcp:%d %s",
+	     port, port, ok ? "OK" : "FAILED");
+	return ok;
+}
+
+static void adb_unforward(int port)
+{
+	char a3[32];
+	snprintf(a3, sizeof(a3), "tcp:%d", port);
+	adb_run("forward", "--remove", a3);
 }
 
 static sock_t connect_to(const char *host, int port)
@@ -353,16 +461,28 @@ static void *stream_thread(void *data)
 	struct usbcam_source *ctx = data;
 	net_init();
 
+	/* USB mode: set up adb forward once, before we start connecting. */
+	if (ctx->mode == MODE_USB) {
+		adb_forward(ctx->port);
+		ctx->adb_forwarded = true;
+	}
+
 	while (ctx->running) {
+		const char *mode_name =
+			ctx->mode == MODE_USB ? "usb" :
+			ctx->mode == MODE_RAW ? "raw" : "http";
 		blog(LOG_INFO,
 		     "[android-usbcam] %s mode → connecting to %s:%d ...",
-		     ctx->mode == MODE_RAW ? "raw" : "http",
-		     ctx->host, ctx->port);
+		     mode_name, ctx->host, ctx->port);
 
 		sock_t s = connect_to(ctx->host, ctx->port);
 		if (s == SOCK_INVALID) {
 			if (!ctx->reconnect || !ctx->running)
 				break;
+			/* USB mode: re-run the forward in case the device
+			 * was just reconnected. */
+			if (ctx->mode == MODE_USB)
+				adb_forward(ctx->port);
 			os_sleep_ms((uint32_t)ctx->reconnect_ms);
 			continue;
 		}
@@ -370,10 +490,10 @@ static void *stream_thread(void *data)
 		ctx->connected = true;
 		blog(LOG_INFO, "[android-usbcam] Connected");
 
-		if (ctx->mode == MODE_RAW)
-			run_raw_session(ctx, s);
-		else
+		if (ctx->mode == MODE_HTTP)
 			run_http_session(ctx, s);
+		else
+			run_raw_session(ctx, s);
 
 		ctx->connected = false;
 		sock_close(s);
@@ -398,12 +518,25 @@ static const char *usbcam_name(void *unused)
 static void load_settings(struct usbcam_source *ctx, obs_data_t *settings)
 {
 	bfree(ctx->host);
-	ctx->host = bstrdup(obs_data_get_string(settings, "host"));
 	const char *mode_s = obs_data_get_string(settings, "mode");
-	ctx->mode = (mode_s && strcmp(mode_s, "http") == 0) ? MODE_HTTP : MODE_RAW;
+	if (mode_s && strcmp(mode_s, "http") == 0)
+		ctx->mode = MODE_HTTP;
+	else if (mode_s && strcmp(mode_s, "raw") == 0)
+		ctx->mode = MODE_RAW;
+	else
+		ctx->mode = MODE_USB;
+
+	if (ctx->mode == MODE_USB) {
+		ctx->host = bstrdup("127.0.0.1");
+	} else {
+		const char *h = obs_data_get_string(settings, "host");
+		ctx->host = bstrdup((h && *h) ? h : "127.0.0.1");
+	}
+
 	ctx->port = (int)obs_data_get_int(settings, "port");
 	if (ctx->port <= 0)
-		ctx->port = (ctx->mode == MODE_RAW) ? 4748 : 4747;
+		ctx->port = (ctx->mode == MODE_HTTP) ? 4747 : 4748;
+
 	ctx->reconnect = obs_data_get_bool(settings, "reconnect");
 	ctx->reconnect_ms = (int)obs_data_get_int(settings, "reconnect_ms");
 	if (ctx->reconnect_ms <= 0)
@@ -425,6 +558,8 @@ static void usbcam_destroy(void *data)
 	struct usbcam_source *ctx = data;
 	ctx->running = false;
 	pthread_join(ctx->thread, NULL);
+	if (ctx->adb_forwarded)
+		adb_unforward(ctx->port);
 	bfree(ctx->recv_buf);
 	bfree(ctx->host);
 	bfree(ctx);
@@ -436,6 +571,10 @@ static void usbcam_update(void *data, obs_data_t *settings)
 
 	ctx->running = false;
 	pthread_join(ctx->thread, NULL);
+	if (ctx->adb_forwarded) {
+		adb_unforward(ctx->port);
+		ctx->adb_forwarded = false;
+	}
 
 	load_settings(ctx, settings);
 
@@ -449,14 +588,20 @@ static bool mode_changed(obs_properties_t *props, obs_property_t *p,
 	UNUSED_PARAMETER(p);
 	const char *mode = obs_data_get_string(settings, "mode");
 	bool is_http = mode && strcmp(mode, "http") == 0;
+	bool is_usb  = !mode || strcmp(mode, "usb") == 0;
 
-	/* Auto-set port to mode default if it currently matches the
-	 * other mode's default. */
+	/* Auto-flip port if it currently matches another mode's default. */
 	int port = (int)obs_data_get_int(settings, "port");
 	if (is_http && port == 4748)
 		obs_data_set_int(settings, "port", 4747);
 	else if (!is_http && port == 4747)
 		obs_data_set_int(settings, "port", 4748);
+
+	/* USB mode: host is always localhost; hide the host field. */
+	obs_property_t *host_prop = obs_properties_get(props, "host");
+	obs_property_set_visible(host_prop, !is_usb);
+	if (is_usb)
+		obs_data_set_string(settings, "host", "127.0.0.1");
 
 	obs_property_t *port_prop = obs_properties_get(props, "port");
 	obs_property_set_description(port_prop,
@@ -471,14 +616,18 @@ static obs_properties_t *usbcam_properties(void *unused)
 	obs_properties_t *props = obs_properties_create();
 
 	obs_property_t *mode = obs_properties_add_list(
-		props, "mode", "Transport mode",
+		props, "mode", "Connection",
 		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(mode, "Raw TCP (low latency)", "raw");
-	obs_property_list_add_string(mode, "HTTP MJPEG (legacy)", "http");
+	obs_property_list_add_string(mode,
+		"USB (auto-forward via ADB)", "usb");
+	obs_property_list_add_string(mode,
+		"Wi-Fi — Raw TCP (low latency)", "raw");
+	obs_property_list_add_string(mode,
+		"Wi-Fi — HTTP MJPEG (legacy)", "http");
 	obs_property_set_modified_callback(mode, mode_changed);
 
 	obs_properties_add_text(props, "host",
-		"Host (phone IP, or 127.0.0.1 for ADB forward)",
+		"Host (phone IP on your LAN)",
 		OBS_TEXT_DEFAULT);
 	obs_properties_add_int(props, "port",
 		"Port (raw TCP, default 4748)", 1, 65535, 1);
@@ -491,7 +640,7 @@ static obs_properties_t *usbcam_properties(void *unused)
 
 static void usbcam_defaults(obs_data_t *settings)
 {
-	obs_data_set_default_string(settings, "mode", "raw");
+	obs_data_set_default_string(settings, "mode", "usb");
 	obs_data_set_default_string(settings, "host", "127.0.0.1");
 	obs_data_set_default_int(settings, "port", 4748);
 	obs_data_set_default_bool(settings, "reconnect", true);
@@ -516,6 +665,7 @@ static struct obs_source_info usbcam_source_info = {
 bool obs_module_load(void)
 {
 	obs_register_source(&usbcam_source_info);
+	adb_locate();
 	blog(LOG_INFO, "[android-usbcam] Plugin loaded "
 	     "(source id: android_usbcam)");
 	return true;
@@ -523,5 +673,7 @@ bool obs_module_load(void)
 
 void obs_module_unload(void)
 {
+	/* Kill the adb daemon on OBS exit so we don't leave it lingering. */
+	adb_run("kill-server", NULL, NULL);
 	blog(LOG_INFO, "[android-usbcam] Plugin unloaded");
 }

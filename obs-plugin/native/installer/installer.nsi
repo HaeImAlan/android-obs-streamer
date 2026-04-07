@@ -101,6 +101,15 @@ Section "Install plugin" SecMain
   FileWrite $0 "${PLUGIN_URL}$\r$\n"
   FileClose $0
 
+  ; Bundled adb (for USB mode auto-forward)
+!ifdef ADB_DIR
+  CreateDirectory "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}\adb"
+  SetOutPath "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}\adb"
+  File "${ADB_DIR}\adb.exe"
+  File "${ADB_DIR}\AdbWinApi.dll"
+  File "${ADB_DIR}\AdbWinUsbApi.dll"
+!endif
+
   ; Uninstaller
   WriteUninstaller "$INSTDIR\${PLUGIN_NAME}-uninstall.exe"
 
@@ -127,6 +136,10 @@ SectionEnd
 Section "Uninstall"
   Delete "$INSTDIR\obs-plugins\64bit\obs-android-usbcam.dll"
   Delete "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}\README.txt"
+  Delete "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}\adb\adb.exe"
+  Delete "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}\adb\AdbWinApi.dll"
+  Delete "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}\adb\AdbWinUsbApi.dll"
+  RMDir  "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}\adb"
   RMDir  "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}\locale"
   RMDir  "$INSTDIR\data\obs-plugins\${PLUGIN_NAME}"
   Delete "$INSTDIR\${PLUGIN_NAME}-uninstall.exe"

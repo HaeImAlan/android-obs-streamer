@@ -27,6 +27,15 @@ jobs:
           cmake -DLIBOBS_INCLUDE_DIR=/usr/include/obs ..
           make -j$(nproc)
 
+      - name: Bundle platform-tools (adb) for Linux
+        run: |
+          curl -sSL -o platform-tools.zip \
+            https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+          unzip -q platform-tools.zip
+          mkdir -p pkg/obs-android-usbcam/data/adb
+          cp platform-tools/adb pkg/obs-android-usbcam/data/adb/adb
+          chmod +x pkg/obs-android-usbcam/data/adb/adb
+
       - name: Package
         run: |
           mkdir -p pkg/obs-android-usbcam/bin/x86_64
@@ -109,6 +118,38 @@ jobs:
           Write-Host "Found: $($dll.FullName)"
           "dll_path=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+      - name: Bundle platform-tools (adb) for Windows
+        id: adb_dir
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" `
+            -OutFile platform-tools.zip
+          Expand-Archive platform-tools.zip -DestinationPath .
+          $adbDir = (Resolve-Path platform-tools).Path
+          if (-not (Test-Path "$adbDir\adb.exe")) {
+            throw "adb.exe missing after extraction"
+          }
+          Write-Host "adb dir: $adbDir"
+          "adb_dir=$adbDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Inject adb into plugin zip
+        shell: pwsh
+        run: |
+          # Unpack the template-built zip, add adb under data/, repack.
+          $stage = "zip-stage"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Expand-Archive obs-android-usbcam-windows-x64.zip -DestinationPath $stage
+          $root = Get-ChildItem $stage -Directory | Select-Object -First 1
+          if ($null -eq $root) { $root = Get-Item $stage }
+          $dataAdb = Join-Path $root.FullName "data\adb"
+          New-Item -ItemType Directory -Force -Path $dataAdb | Out-Null
+          Copy-Item "${{ steps.adb_dir.outputs.adb_dir }}\adb.exe"          $dataAdb
+          Copy-Item "${{ steps.adb_dir.outputs.adb_dir }}\AdbWinApi.dll"    $dataAdb
+          Copy-Item "${{ steps.adb_dir.outputs.adb_dir }}\AdbWinUsbApi.dll" $dataAdb
+          Remove-Item obs-android-usbcam-windows-x64.zip
+          Compress-Archive -Path "$stage\*" -DestinationPath obs-android-usbcam-windows-x64.zip
+
       - name: Build NSIS installer
         shell: pwsh
         run: |
@@ -120,6 +161,7 @@ jobs:
           }
           & $makensis `
             "/DPLUGIN_DLL=${{ steps.find_dll.outputs.dll_path }}" `
+            "/DADB_DIR=${{ steps.adb_dir.outputs.adb_dir }}" `
             "/DOUTFILE=$PWD\obs-android-usbcam-installer.exe" `
             obs-plugin/native/installer/installer.nsi
           if (-not (Test-Path obs-android-usbcam-installer.exe)) {
