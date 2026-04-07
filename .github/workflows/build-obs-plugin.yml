@@ -98,11 +98,45 @@ jobs:
           if ($null -eq $zip) { throw "No plugin zip found after packaging" }
           Copy-Item $zip.FullName ../obs-android-usbcam-windows-x64.zip
 
-      - name: Upload artifact
+      - name: Locate built DLL
+        id: find_dll
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem -Recurse -Path tpl -Filter 'obs-android-usbcam.dll' |
+                 Where-Object { $_.FullName -notmatch 'CMakeFiles' } |
+                 Select-Object -First 1
+          if ($null -eq $dll) { throw "Could not find built obs-android-usbcam.dll" }
+          Write-Host "Found: $($dll.FullName)"
+          "dll_path=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          # NSIS is preinstalled on windows-2022 runners under Program Files (x86)
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) {
+            choco install nsis -y --no-progress
+            $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          }
+          & $makensis `
+            "/DPLUGIN_DLL=${{ steps.find_dll.outputs.dll_path }}" `
+            "/DOUTFILE=$PWD\obs-android-usbcam-installer.exe" `
+            obs-plugin/native/installer/installer.nsi
+          if (-not (Test-Path obs-android-usbcam-installer.exe)) {
+            throw "Installer build failed"
+          }
+
+      - name: Upload artifact (zip)
         uses: actions/upload-artifact@v4
         with:
           name: obs-plugin-windows-x64
           path: obs-android-usbcam-windows-x64.zip
+
+      - name: Upload artifact (installer)
+        uses: actions/upload-artifact@v4
+        with:
+          name: obs-plugin-windows-installer
+          path: obs-android-usbcam-installer.exe
 
       - name: Upload to dev release
         if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')
@@ -114,4 +148,6 @@ jobs:
           make_latest: false
           body: |
             Automated build from branch `${{ github.ref_name }}` at commit ${{ github.sha }}.
-          files: obs-android-usbcam-windows-x64.zip
+          files: |
+            obs-android-usbcam-windows-x64.zip
+            obs-android-usbcam-installer.exe
