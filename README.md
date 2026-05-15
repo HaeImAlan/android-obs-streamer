@@ -15,10 +15,13 @@ Two parts:
 ## Features
 
 ### Android app
-- Camera2 capture with selectable resolution and 15/24/30/60 FPS
+- Camera2 capture with selectable resolution and 10/15/20/24/30/60 FPS
+- JPEG quality slider (30–100) for bandwidth/quality tradeoff
+- White balance presets (Auto, Daylight, Cloudy, Fluorescent, Tungsten, Shade)
 - Front and back cameras, torch, ring-light overlay (front camera, with brightness slider)
 - Tap-to-focus, autofocus on/off, AE lock, exposure compensation
 - Auto-rotation that re-orients the JPEG stream to match the device
+- Live status bar: FPS counter, raw TCP connection status, HTTP client count
 - Wake lock so the phone never sleeps mid-stream
 - Slide-out drawer UI so the camera preview fills the screen
 - Can be launched as a HOME app
