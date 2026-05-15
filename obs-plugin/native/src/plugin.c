@@ -278,30 +278,22 @@ static void push_frame(struct usbcam_source *ctx, const uint8_t *jpeg,
 		       size_t jpeg_size)
 {
 	int w, h, channels;
-	unsigned char *rgb = stbi_load_from_memory(jpeg, (int)jpeg_size,
-						   &w, &h, &channels, 3);
-	if (!rgb)
+	unsigned char *rgba = stbi_load_from_memory(jpeg, (int)jpeg_size,
+						    &w, &h, &channels, 4);
+	if (!rgba)
 		return;
 
 	struct obs_source_frame frame;
 	memset(&frame, 0, sizeof(frame));
 	frame.width = (uint32_t)w;
 	frame.height = (uint32_t)h;
-	frame.format = VIDEO_FORMAT_BGR3;
-
-	size_t pixels = (size_t)w * (size_t)h;
-	for (size_t i = 0; i < pixels; i++) {
-		uint8_t tmp = rgb[i * 3];
-		rgb[i * 3] = rgb[i * 3 + 2];
-		rgb[i * 3 + 2] = tmp;
-	}
-
-	frame.data[0] = rgb;
-	frame.linesize[0] = (uint32_t)(w * 3);
+	frame.format = VIDEO_FORMAT_RGBA;
+	frame.data[0] = rgba;
+	frame.linesize[0] = (uint32_t)(w * 4);
 	frame.timestamp = os_gettime_ns();
 
 	obs_source_output_video(ctx->source, &frame);
-	stbi_image_free(rgb);
+	stbi_image_free(rgba);
 }
 
 /* ── Mode: RAW TCP ────────────────────────────────────────────────── */
