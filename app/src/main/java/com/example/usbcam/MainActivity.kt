@@ -2,6 +2,7 @@ package com.example.usbcam
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.hardware.camera2.CaptureRequest
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.SurfaceTexture
@@ -24,6 +25,15 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val CAMERA_PERMISSION_CODE = 100
         private val FPS_OPTIONS = intArrayOf(10, 15, 20, 24, 30, 60)
+        private val WB_MODES = intArrayOf(
+            CaptureRequest.CONTROL_AWB_MODE_AUTO,
+            CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT,
+            CaptureRequest.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT,
+            CaptureRequest.CONTROL_AWB_MODE_FLUORESCENT,
+            CaptureRequest.CONTROL_AWB_MODE_INCANDESCENT,
+            CaptureRequest.CONTROL_AWB_MODE_SHADE
+        )
+        private val WB_LABELS = arrayOf("Auto", "Daylight", "Cloudy", "Fluorescent", "Tungsten", "Shade")
     }
 
     // Views
@@ -49,6 +59,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ringLightSeekBar: SeekBar
     private lateinit var jpegQualitySeekBar: SeekBar
     private lateinit var jpegQualityText: TextView
+    private lateinit var wbSpinner: Spinner
 
     // State
     private val server = MjpegServer()
@@ -87,6 +98,7 @@ class MainActivity : AppCompatActivity() {
         setupMenuButton()
         setupButtons()
         setupFpsSpinner()
+        setupWbSpinner()
         setupEvSlider()
         setupJpegQualitySlider()
         setupRingLightSlider()
@@ -119,6 +131,7 @@ class MainActivity : AppCompatActivity() {
         ringLightSeekBar = findViewById(R.id.ringLightSeekBar)
         jpegQualitySeekBar = findViewById(R.id.jpegQualitySeekBar)
         jpegQualityText = findViewById(R.id.jpegQualityText)
+        wbSpinner = findViewById(R.id.wbSpinner)
     }
 
     // ── Wake lock ────────────────────────────────────────────────────────
@@ -508,6 +521,23 @@ class MainActivity : AppCompatActivity() {
                 val newFps = FPS_OPTIONS[pos]
                 if (newFps != cameraStreamer.targetFps) {
                     cameraStreamer.targetFps = newFps
+                    if (streaming) cameraStreamer.applySettings()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun setupWbSpinner() {
+        val adapter = ArrayAdapter(this, R.layout.spinner_item, WB_LABELS.toList())
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        wbSpinner.adapter = adapter
+
+        wbSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                val newWb = WB_MODES[pos]
+                if (newWb != cameraStreamer.whiteBalance) {
+                    cameraStreamer.whiteBalance = newWb
                     if (streaming) cameraStreamer.applySettings()
                 }
             }

@@ -201,6 +201,28 @@
                     android:layout_weight="1" />
             </LinearLayout>
 
+            <!-- White Balance -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:layout_width="32dp"
+                    android:layout_height="wrap_content"
+                    android:text="WB"
+                    android:textColor="#FF888888"
+                    android:textSize="11sp" />
+
+                <Spinner
+                    android:id="@+id/wbSpinner"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1" />
+            </LinearLayout>
+
             <!-- JPEG Quality -->
             <LinearLayout
                 android:layout_width="match_parent"

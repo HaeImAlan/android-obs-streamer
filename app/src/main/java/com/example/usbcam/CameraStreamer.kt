@@ -38,6 +38,7 @@ class CameraStreamer(
     var exposureCompensation: Int = 0
     var useFrontCamera: Boolean = false
     var torchEnabled: Boolean = false
+    var whiteBalance: Int = CaptureRequest.CONTROL_AWB_MODE_AUTO
     var deviceRotation: Int = 0  // Surface.ROTATION_0, etc.
     @Volatile
     var framesCaptured: Long = 0
@@ -181,6 +182,7 @@ class CameraStreamer(
         )
         builder.set(CaptureRequest.JPEG_ORIENTATION, computeJpegOrientation())
         builder.set(CaptureRequest.JPEG_QUALITY, jpegQuality.toByte())
+        builder.set(CaptureRequest.CONTROL_AWB_MODE, whiteBalance)
 
         if (hasFlash && !useFrontCamera) {
             builder.set(
