@@ -47,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ringLightOverlay: View
     private lateinit var ringLightBrightnessRow: View
     private lateinit var ringLightSeekBar: SeekBar
+    private lateinit var jpegQualitySeekBar: SeekBar
+    private lateinit var jpegQualityText: TextView
 
     // State
     private val server = MjpegServer()
@@ -61,6 +63,17 @@ class MainActivity : AppCompatActivity() {
     private var menuOpen = false
     private var ringLightOn = false
     private val availableResolutions = mutableListOf<Size>()
+    private var lastFrameCount = 0L
+    private var lastFpsTime = 0L
+    private var currentFps = 0f
+    private val statsRunnable = object : Runnable {
+        override fun run() {
+            if (streaming) {
+                updateLiveStats()
+                uiHandler.postDelayed(this, 1000)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +88,7 @@ class MainActivity : AppCompatActivity() {
         setupButtons()
         setupFpsSpinner()
         setupEvSlider()
+        setupJpegQualitySlider()
         setupRingLightSlider()
         setupOrientationListener()
         acquireWakeLock()
@@ -103,6 +117,8 @@ class MainActivity : AppCompatActivity() {
         ringLightOverlay = findViewById(R.id.ringLightOverlay)
         ringLightBrightnessRow = findViewById(R.id.ringLightBrightnessRow)
         ringLightSeekBar = findViewById(R.id.ringLightSeekBar)
+        jpegQualitySeekBar = findViewById(R.id.jpegQualitySeekBar)
+        jpegQualityText = findViewById(R.id.jpegQualityText)
     }
 
     // ── Wake lock ────────────────────────────────────────────────────────
@@ -379,6 +395,42 @@ class MainActivity : AppCompatActivity() {
         evValueText.text = "0"
     }
 
+    // ── JPEG quality ─────────────────────────────────────────────────────
+
+    private fun setupJpegQualitySlider() {
+        jpegQualitySeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val quality = progress + 30
+                cameraStreamer.jpegQuality = quality
+                jpegQualityText.text = "$quality"
+                if (streaming) cameraStreamer.applySettings()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+        })
+    }
+
+    // ── Live stats ──────────────────────────────────────────────────────
+
+    private fun updateLiveStats() {
+        val now = System.currentTimeMillis()
+        val frames = cameraStreamer.framesCaptured
+        if (lastFpsTime > 0) {
+            val elapsed = (now - lastFpsTime) / 1000f
+            if (elapsed > 0) currentFps = (frames - lastFrameCount) / elapsed
+        }
+        lastFrameCount = frames
+        lastFpsTime = now
+
+        val ip = getDeviceIp()
+        val fpsStr = "%.0f".format(currentFps)
+        val rawConn = if (rawServer.clientConnected) "raw:ON" else "raw:--"
+        val httpConn = server.clientCount.let { if (it > 0) "http:$it" else "http:--" }
+        statusBar.text = if (ip != null) "$ip  ${fpsStr}fps  $rawConn  $httpConn"
+            else "${fpsStr}fps  $rawConn  $httpConn"
+    }
+
     // ── Screen off ───────────────────────────────────────────────────────
 
     private fun screenOff() {
@@ -515,7 +567,11 @@ class MainActivity : AppCompatActivity() {
         val surface = if (surfaceReady && !screenOff) textureView.surfaceTexture else null
         cameraStreamer.start(surface)
         streaming = true
+        lastFrameCount = 0
+        lastFpsTime = 0
+        currentFps = 0f
         updateStatusBar()
+        uiHandler.postDelayed(statsRunnable, 1000)
         toggleButton.text = "Stop"
         uiHandler.postDelayed({
             configureEvSlider()
@@ -528,6 +584,7 @@ class MainActivity : AppCompatActivity() {
         server.stop()
         rawServer.stop()
         streaming = false
+        uiHandler.removeCallbacks(statsRunnable)
         statusBar.text = "Stopped"
         connectionInfo.visibility = View.GONE
         toggleButton.text = "Start"

@@ -11,6 +11,8 @@ class MjpegServer(private val port: Int = 4747) {
     @Volatile
     var latestFrame: ByteArray? = null
 
+    val clientCount: Int get() = sessions.size
+
     private var serverSocket: ServerSocket? = null
     private val executor = Executors.newSingleThreadExecutor()
     private val sessions = CopyOnWriteArrayList<StreamSession>()

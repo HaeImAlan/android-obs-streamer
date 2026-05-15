@@ -16,6 +16,12 @@ class RawStreamServer(private val port: Int = 4748) {
 
     @Volatile
     var latestFrame: ByteArray? = null
+    @Volatile
+    var clientConnected: Boolean = false
+        private set
+    @Volatile
+    var framesSent: Long = 0
+        private set
 
     private var serverSocket: ServerSocket? = null
     private val executor = Executors.newSingleThreadExecutor()
@@ -43,6 +49,7 @@ class RawStreamServer(private val port: Int = 4748) {
                         socket.tcpNoDelay = true
                         socket.sendBufferSize = 65536
                         activeClient = socket
+                        clientConnected = true
                         clientThread = Thread { handleClient(socket) }
                         clientThread?.isDaemon = true
                         clientThread?.start()
@@ -71,13 +78,17 @@ class RawStreamServer(private val port: Int = 4748) {
                     continue
                 }
                 writeFrame(out, frame)
+                framesSent++
                 lastSentFrame = frame
             }
         } catch (e: IOException) {
             // Client disconnected
         } finally {
             try { socket.close() } catch (_: IOException) {}
-            if (activeClient === socket) activeClient = null
+            if (activeClient === socket) {
+                activeClient = null
+                clientConnected = false
+            }
         }
     }
 
@@ -99,7 +110,9 @@ class RawStreamServer(private val port: Int = 4748) {
         running = false
         try { activeClient?.close() } catch (_: IOException) {}
         activeClient = null
+        clientConnected = false
         try { serverSocket?.close() } catch (_: IOException) {}
         serverSocket = null
+        framesSent = 0
     }
 }

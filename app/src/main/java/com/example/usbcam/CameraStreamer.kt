@@ -32,12 +32,16 @@ class CameraStreamer(
 
     var resolution: Size = Size(1280, 720)
     var targetFps: Int = 30
+    var jpegQuality: Int = 85
     var continuousAf: Boolean = true
     var aeLocked: Boolean = false
     var exposureCompensation: Int = 0
     var useFrontCamera: Boolean = false
     var torchEnabled: Boolean = false
     var deviceRotation: Int = 0  // Surface.ROTATION_0, etc.
+    @Volatile
+    var framesCaptured: Long = 0
+        private set
 
     var evRange: Range<Int> = Range(0, 0)
         private set
@@ -72,6 +76,7 @@ class CameraStreamer(
                 buffer.get(bytes)
                 server.latestFrame = bytes
                 rawServer?.latestFrame = bytes
+                framesCaptured++
             } finally {
                 image.close()
             }
@@ -130,7 +135,7 @@ class CameraStreamer(
                     captureSession = session
                     requestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         surfaces.forEach { addTarget(it) }
-                        set(CaptureRequest.JPEG_QUALITY, 85.toByte())
+                        set(CaptureRequest.JPEG_QUALITY, jpegQuality.toByte())
                     }
                     applySettings()
                 }
@@ -175,6 +180,7 @@ class CameraStreamer(
             Range(targetFps, targetFps)
         )
         builder.set(CaptureRequest.JPEG_ORIENTATION, computeJpegOrientation())
+        builder.set(CaptureRequest.JPEG_QUALITY, jpegQuality.toByte())
 
         if (hasFlash && !useFrontCamera) {
             builder.set(
@@ -229,6 +235,7 @@ class CameraStreamer(
 
     fun stop() {
         running = false
+        framesCaptured = 0
         try {
             captureSession?.stopRepeating()
             captureSession?.close()
